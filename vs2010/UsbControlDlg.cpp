@@ -52,11 +52,7 @@ BEGIN_MESSAGE_MAP(CAboutDlg, CDialogEx)
 	ON_WM_TIMER()
 END_MESSAGE_MAP()
 
-
 // CUsbControlDlg 对话框
-
-
-
 
 CUsbControlDlg::CUsbControlDlg(CWnd* pParent /*=NULL*/)
 	: CDialogEx(CUsbControlDlg::IDD, pParent)
@@ -87,15 +83,6 @@ CUsbControlDlg::CUsbControlDlg(CWnd* pParent /*=NULL*/)
 	m_Init = FALSE;
 	snap=false;
 	char temp[4];
-	/*if(h_cctapi->getUSBDeviceCnt()>0)
-	{
-	for(int i=0;i<h_cctapi->getUSBDeviceCnt();i++)
-	{
-	sprintf(temp,"%d",i);
-	m_comboDevNum.InsertString(i,(LPCTSTR)temp);
-	}
-	m_comboDevNum.SetCurSel(0);
-	}*/
 }
 
 CUsbControlDlg::~CUsbControlDlg()
@@ -145,9 +132,7 @@ END_MESSAGE_MAP()
 BOOL CUsbControlDlg::OnInitDialog()
 {
 	CDialogEx::OnInitDialog();
-
 	// 将“关于...”菜单项添加到系统菜单中。
-
 	// IDM_ABOUTBOX 必须在系统命令范围内。
 	ASSERT((IDM_ABOUTBOX & 0xFFF0) == IDM_ABOUTBOX);
 	ASSERT(IDM_ABOUTBOX < 0xF000);
@@ -184,13 +169,6 @@ BOOL CUsbControlDlg::OnInitDialog()
 	mRect.top=mRect.bottom-cRect.Height();
 	MoveWindow(mRect);
 	//------------------------------------
-	//m_pFileRbf=new CFile();
-	//m_pVideoDlg=new CVideoDlg();
-
-	//m_pVideoDlg->Create(IDD_DLG_VIDEO,this);
-	//m_pVideoDlg->ShowWindow(FALSE);
-	//m_hDisplayDC=m_pVideoDlg->GetDisplayDC()->m_hDC;
-
 	SetTimer(1,1000,NULL);
 	m_iRdoDriver=(int)m_CyDriver;
 
@@ -273,8 +251,8 @@ void _stdcall RawCallBack(LPVOID lpParam,LPVOID lpUser)
 	//BYTE *pDataBuffer = (BYTE*)lpParam;
 	DFrameStruct *imData=(DFrameStruct*)lpParam;
 	//CUsbControlDlg *pDlg=(CUsbControlDlg*)lpUser;
-	cv::Mat frame(imData->height,imData->width,CV_8UC1,imData->leftData);
-	cv::Mat frame1(imData->height,imData->width,CV_8UC1,imData->rightData);
+	cv::Mat frame(imData->height,imData->width,CV_8UC1,imData->leftData.get());
+	cv::Mat frame1(imData->height,imData->width,CV_8UC1,imData->rightData.get());
 	//cv::Mat colored(g_height,g_width,CV_8UC3);
 	//cv::applyColorMap(frame,colored,cv::COLORMAP_JET)
 	cv::imshow("disp",frame);
@@ -284,9 +262,11 @@ void _stdcall RawCallBack(LPVOID lpParam,LPVOID lpUser)
 	if (b_timer1s==TRUE)
 	{
 		CString csIMU;
-		csIMU.Format(L"x    ,y    ,z     \n%4f, %4f, %4f\n%4f, %4f, %4f",
-			imData->IMUData[0].accelData[0],imData->IMUData[0].accelData[1],imData->IMUData[0].accelData[2],
-			imData->IMUData[0].gyroData[0],imData->IMUData[0].gyroData[1],imData->IMUData[0].gyroData[2]);
+		IMUDataStruct *m_IMU=imData->IMUData.get();
+		csIMU.Format(L"Accel       Gyro    \n x: %7d| %7d\n y:%7d|%7d\n z: %7d|%7d",
+			m_IMU[0].accelData[0],m_IMU[0].gyroData[0],
+			m_IMU[0].accelData[1],m_IMU[0].gyroData[1],
+			m_IMU[0].accelData[2],m_IMU[0].gyroData[2]);
 		mainwindow->setStatusText(csIMU);
 		
 	b_timer1s=FALSE;
@@ -309,6 +289,7 @@ void CUsbControlDlg::OnBnClickedBtnVideocapture()
 	// TODO: 在此添加控件通知处理程序代码
 	//m_pVideoDlg->ShowWindow(TRUE);
 	cv::namedWindow("disp");
+	cv::namedWindow("disp1");
 	if(h_cctapi->startCap(g_height,g_width,RawCallBack,0)<0)
 	{
 		SetDlgItemText(IDC_STATIC_TEXT,L"USB设备打开失败！");
@@ -339,6 +320,7 @@ void CUsbControlDlg::OnBnClickedBtnStopcapture()
 		return;
 	}
 	cv::destroyWindow("disp");
+	cv::destroyWindow("disp1");
 	SetDlgItemText(IDC_STATIC_TEXT,L" ");
 }
 
