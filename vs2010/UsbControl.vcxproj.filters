@@ -87,8 +87,5 @@
     <Library Include="CyUsb.lib">
       <Filter>lib</Filter>
     </Library>
-    <Library Include="Debug\CCTAPI.lib">
-      <Filter>lib</Filter>
-    </Library>
   </ItemGroup>
 </Project>

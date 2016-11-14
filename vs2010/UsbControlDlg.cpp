@@ -14,7 +14,7 @@ static char THIS_FILE[]=__FILE__;
 #define new DEBUG_NEW
 #endif
 
-int g_width=640;
+int g_width=752;
 int g_height=480;
 cv::VideoWriter h_vw;
 volatile bool snap;
@@ -59,6 +59,7 @@ CUsbControlDlg::CUsbControlDlg(CWnd* pParent /*=NULL*/)
 	, m_iProcType(0)
 	, m_sEdit_Width(_T(""))
 	, m_sEdit_Height(_T(""))
+	//, c_AutoExpo(false)
 {
 	m_hIcon = AfxGetApp()->LoadIcon(IDR_MAINFRAME);
 	m_pFileRbf=NULL;
@@ -103,6 +104,12 @@ void CUsbControlDlg::DoDataExchange(CDataExchange* pDX)
 	DDX_Text(pDX, IDC_EDIT1, m_sEdit_Width);
 	DDX_Text(pDX, IDC_EDIT2, m_sEdit_Height);
 	DDX_Control(pDX, IDC_COMBODev, m_comboDevNum);
+	DDX_Control(pDX,IDC_COMBOTrigMode,m_ComboTrigMode);
+	DDX_Control(pDX, IDC_EDITFPGAFreq, m_ceFpgaFreq);
+	DDX_Control(pDX, IDC_CHECK2, c_AutoExpo);
+	DDX_Control(pDX, IDC_CHECK3, c_AutoGain);
+	DDX_Control(pDX, IDC_EDITExpoValue, ce_ExpoValue);
+	DDX_Control(pDX, IDC_EDITGainValue, ce_GainValue);
 }
 
 BEGIN_MESSAGE_MAP(CUsbControlDlg, CDialogEx)
@@ -123,7 +130,13 @@ BEGIN_MESSAGE_MAP(CUsbControlDlg, CDialogEx)
 	ON_EN_CHANGE(IDC_EDIT1, &CUsbControlDlg::OnEnChangeEdit1)
 	ON_EN_CHANGE(IDC_EDIT2, &CUsbControlDlg::OnEnChangeEdit2)
 	ON_BN_CLICKED(IDC_BTN_SNAP, &CUsbControlDlg::OnBnClickedBnSnap)
-	ON_CBN_SELCHANGE(IDC_COMBO1, &CUsbControlDlg::OnCbnSelchangeCombo1)
+ON_CBN_SELCHANGE(IDC_COMBOTrigMode, &CUsbControlDlg::setTrigMode)
+ON_EN_UPDATE(IDC_EDITFPGAFreq, &CUsbControlDlg::setFpgaFreq)
+ON_BN_CLICKED(IDC_CHECK2, &CUsbControlDlg::setExpoGain)
+ON_BN_CLICKED(IDC_CHECK3, &CUsbControlDlg::setExpoGain)
+ON_EN_UPDATE(IDC_EDITExpoValue, &CUsbControlDlg::setExpoValue)
+ON_EN_CHANGE(IDC_EDITGainValue, &CUsbControlDlg::setGainValue)
+ON_BN_CLICKED(IDC_BtnSoftTrig, &CUsbControlDlg::OnBnClickedBtnsofttrig)
 END_MESSAGE_MAP()
 
 
@@ -187,11 +200,17 @@ BOOL CUsbControlDlg::OnInitDialog()
 	if(!fac_func)
 	{
 		std::cerr<<"unable to load create_CCTAPI from dll\n";
-		return TRUE;
+		//return TRUE;
 	}
 	//h_cctapi=fac_func();
 	//h_cctapi=::create_CCTAPI();
-	
+	m_ComboTrigMode.AddString(L"AutoTrig");
+	m_ComboTrigMode.InsertString(1,L"FpgaTrig");
+	m_ComboTrigMode.InsertString(2,L"SoftTrig");
+	m_ComboTrigMode.InsertString(3,L"FromOutSide");
+	m_ComboTrigMode.SetCurSel(0);
+	c_AutoExpo.SetCheck(1);
+	UpdateData(TRUE);
 	return TRUE;  // 除非将焦点设置到控件，否则返回 TRUE
 }
 
@@ -496,7 +515,161 @@ void CUsbControlDlg::OnBnClickedBnSnap()
 }
 
 
-void CUsbControlDlg::OnCbnSelchangeCombo1()
+//BOOL CUsbControlDlg::PreTranslateMessage(MSG* pMsg)
+//{
+//	if (pMsg->message == WM_KEYDOWN &&
+//		pMsg->wParam == VK_RETURN &&
+//		GetFocus() == m_ceFpgaFreq)
+//	{
+//		switch(GetFocus())
+//		{
+//		case m_ceFpgaFreq:
+//		default:
+//		}
+//		// handle return pressed in edit control
+//		return TRUE; // this doesn't need processing anymore
+//	}
+//	return FALSE; // all other cases still need default processing
+//}
+
+void CUsbControlDlg::setFpgaFreq()
+{
+	// TODO:  If this is a RICHEDIT control, the control will not
+	// send this notification unless you override the CDialogEx::OnInitDialog()
+	// function and call CRichEditCtrl().SetEventMask()
+	// with the ENM_CHANGE flag ORed into the mask.
+
+	// TODO:  Add your control notification handler code here
+	
+	CString s_temp;
+	UpdateData(true);
+	m_ceFpgaFreq.GetWindowText(s_temp);
+	int fpgafreq= _tstoi(s_temp);
+	s_temp.ReleaseBuffer();
+	if(m_ComboTrigMode.GetCurSel()==2&&fpgafreq>0)
+	{
+		m_byData[0]=2;
+		m_byData[1]=fpgafreq&0xff;
+	m_sUsbOrder.DataBytes=2;
+	m_sUsbOrder.ReqCode=TRIGMODE;
+	m_sUsbOrder.Direction=0;
+	SendOrder(&m_sUsbOrder);
+	}
+	else
+	{
+		SetDlgItemText(IDC_STATIC_TEXT,L"Check Trig Mode");
+	}
+
+}
+
+void CUsbControlDlg::setTrigMode()
 {
 	// TODO: Add your control notification handler code here
+
+	CString s_temp;
+	UpdateData(true);
+	m_ceFpgaFreq.GetWindowText(s_temp);
+	int fpgafreq= _tstoi(s_temp);
+	s_temp.ReleaseBuffer();
+	m_byData[0]=m_ComboTrigMode.GetCurSel()&0xff;
+	m_byData[1]=fpgafreq&0xff;
+	m_sUsbOrder.DataBytes=2;
+	m_sUsbOrder.ReqCode=TRIGMODE;
+	m_sUsbOrder.Direction=0;
+	SendOrder(&m_sUsbOrder);
+	if(m_ComboTrigMode.GetCurSel()==2&&fpgafreq<=0)
+	{
+		SetDlgItemText(IDC_STATIC_TEXT,L"Neet Fpga Freq");
+	}
+	return;
+}
+
+
+
+
+void CUsbControlDlg::setExpoGain()
+{
+	// TODO: Add your control notification handler code here
+	m_byData[0]=c_AutoExpo.GetCheck()==true?1:0;
+	m_byData[0]+=(c_AutoGain.GetCheck()==true?1:0)<<1;
+	m_sUsbOrder.DataBytes=1;
+	m_sUsbOrder.ReqCode=EXPOGAIN;
+	m_sUsbOrder.Direction=0;
+	SendOrder(&m_sUsbOrder);
+}
+
+
+void CUsbControlDlg::setExpoValue()
+{
+	// TODO:  If this is a RICHEDIT control, the control will not
+	// send this notification unless you override the CDialogEx::OnInitDialog()
+	// function to send the EM_SETEVENTMASK message to the control
+	// with the ENM_UPDATE flag ORed into the lParam mask.
+
+	// TODO:  Add your control notification handler code here
+	CString s_temp;
+	UpdateData(true);
+	ce_ExpoValue.GetWindowText(s_temp);
+	int ExpoValue= _tstoi(s_temp);
+	s_temp.ReleaseBuffer();
+	if(c_AutoExpo.GetCheck()==false&&ExpoValue>0)
+	{
+		m_byData[0]=(ExpoValue&0xff<<8)>>8;
+		m_byData[1]=ExpoValue&0xff;
+		m_sUsbOrder.DataBytes=2;
+		m_sUsbOrder.ReqCode=EXPO;
+		m_sUsbOrder.Direction=0;
+		SendOrder(&m_sUsbOrder);
+	}
+	else
+	{
+		SetDlgItemText(IDC_STATIC_TEXT,L"Check Expo?");
+	}
+
+}
+
+
+void CUsbControlDlg::setGainValue()
+{
+	// TODO:  If this is a RICHEDIT control, the control will not
+	// send this notification unless you override the CDialogEx::OnInitDialog()
+	// function and call CRichEditCtrl().SetEventMask()
+	// with the ENM_CHANGE flag ORed into the mask.
+
+	// TODO:  Add your control notification handler code here
+	CString s_temp;
+	UpdateData(true);
+	ce_GainValue.GetWindowText(s_temp);
+	int GainValue= _tstoi(s_temp);
+	s_temp.ReleaseBuffer();
+	if(c_AutoExpo.GetCheck()==false&&GainValue>0)
+	{
+		m_byData[0]=(GainValue&0xff<<8)>>8;
+		m_byData[1]=GainValue&0xff;
+		m_sUsbOrder.DataBytes=2;
+		m_sUsbOrder.ReqCode=GAIN;
+		m_sUsbOrder.Direction=0;
+		SendOrder(&m_sUsbOrder);
+	}
+	else
+	{
+		SetDlgItemText(IDC_STATIC_TEXT,L"Check Expo?");
+	}
+}
+
+
+void CUsbControlDlg::OnBnClickedBtnsofttrig()
+{
+	// TODO: Add your control notification handler code her
+	if(m_ComboTrigMode.GetCurSel()==3)
+	{
+		m_sUsbOrder.ReqCode=SOFTTRIG;
+		m_sUsbOrder.DataBytes=0;
+		m_sUsbOrder.Direction=0;
+		SendOrder(&m_sUsbOrder);
+	}
+	else
+	{
+		SetDlgItemText(IDC_STATIC_TEXT,L"Triger Mode?");
+	}
 }

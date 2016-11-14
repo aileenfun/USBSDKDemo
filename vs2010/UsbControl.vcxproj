@@ -48,7 +48,7 @@
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
     <LinkIncremental>true</LinkIncremental>
     <IncludePath>Q:\github\CCTAPI\CCTAPI;$(IncludePath)</IncludePath>
-    <LibraryPath>Q:\github\UsbSDKDemo\vs2012\Debug;$(LibraryPath)</LibraryPath>
+    <LibraryPath>Q:\github\UsbSDKDemo\vs2010\Debug;$(LibraryPath)</LibraryPath>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">
     <LinkIncremental>false</LinkIncremental>
@@ -136,7 +136,6 @@
   </ItemGroup>
   <ItemGroup>
     <Library Include="CyUsb.lib" />
-    <Library Include="Debug\CCTAPI.lib" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\..\CCTAPI\CCTAPI\CCTAPI.vcxproj">

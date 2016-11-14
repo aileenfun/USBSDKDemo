@@ -18,7 +18,10 @@ typedef
 	(WINAPI * LPMV_CALLBACK2)(LPVOID lpParam, LPVOID lpUser);
 
 typedef ICCTAPI*(APIENTRY  *icct_factory)();//factory of ICCTAPI implementing objects
-
+enum ReqValue
+{
+	TRIGMODE=0xD0,IMGDISP,EXPOGAIN,GAIN,EXPO,MIRROR,RCEXTR,TRIGPERIOD,RSTHW,SOFTTRIG,RSTSENSOR
+};
 class CUsbControlDlg : public CDialogEx
 {
 // ππ‘Ï
@@ -100,7 +103,23 @@ public:
 	int test;
 	int test2;
 	afx_msg void OnBnClickedBnSnap();
-	afx_msg void OnCbnSelchangeCombo1();
+//	afx_msg void OnCbnSelchangeCombo1();
 	CComboBox m_comboDevNum;
+	CComboBox m_ComboTrigMode;
 	void setStatusText(CString cs);
+//	afx_msg void setFpgaFreq();
+	CEdit m_ceFpgaFreq;
+//	afx_msg void setTrigMode();
+	afx_msg void setTrigMode();
+	afx_msg void setFpgaFreq();
+//	BOOL PreTranslateMessage(MSG* pMsg);
+	CButton c_AutoExpo;
+	CButton c_AutoGain;
+	CEdit ce_ExpoValue;
+	CEdit ce_GainValue;
+	afx_msg void setExpoGain();
+
+	afx_msg void setExpoValue();
+	afx_msg void setGainValue();
+	afx_msg void OnBnClickedBtnsofttrig();
 };
