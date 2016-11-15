@@ -270,26 +270,26 @@ void _stdcall RawCallBack(LPVOID lpParam,LPVOID lpUser)
 	//BYTE *pDataBuffer = (BYTE*)lpParam;
 	DFrameStruct *imData=(DFrameStruct*)lpParam;
 	//CUsbControlDlg *pDlg=(CUsbControlDlg*)lpUser;
-	cv::Mat frame(imData->height,imData->width,CV_8UC1,imData->leftData.get());
-	cv::Mat frame1(imData->height,imData->width,CV_8UC1,imData->rightData.get());
+	cv::Mat frame(g_height,g_width,CV_8UC1,imData->leftData.get());
+	//cv::Mat frame1(imData->height,imData->width,CV_8UC1,imData->rightData.get());
 	//cv::Mat colored(g_height,g_width,CV_8UC3);
 	//cv::applyColorMap(frame,colored,cv::COLORMAP_JET)
 	cv::imshow("disp",frame);
-	cv::imshow("disp1",frame1);
+	//cv::imshow("disp1",frame1);
 	//cv::imshow("color",colored);
 	cv::waitKey(10);
-	if (b_timer1s==TRUE)
+	/*if (b_timer1s==TRUE)
 	{
-		CString csIMU;
-		IMUDataStruct *m_IMU=imData->IMUData.get();
-		csIMU.Format(L"Accel       Gyro    \n x: %7d| %7d\n y:%7d|%7d\n z: %7d|%7d",
-			m_IMU[0].accelData[0],m_IMU[0].gyroData[0],
-			m_IMU[0].accelData[1],m_IMU[0].gyroData[1],
-			m_IMU[0].accelData[2],m_IMU[0].gyroData[2]);
-		mainwindow->setStatusText(csIMU);
-		
+	CString csIMU;
+	IMUDataStruct *m_IMU=imData->IMUData.get();
+	csIMU.Format(L"Accel       Gyro    \n x: %7d| %7d\n y:%7d|%7d\n z: %7d|%7d",
+	m_IMU[0].accelData[0],m_IMU[0].gyroData[0],
+	m_IMU[0].accelData[1],m_IMU[0].gyroData[1],
+	m_IMU[0].accelData[2],m_IMU[0].gyroData[2]);
+	mainwindow->setStatusText(csIMU);
+
 	b_timer1s=FALSE;
-	}
+	}*/
 
 	if(snap==true)
 	{

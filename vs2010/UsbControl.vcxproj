@@ -110,7 +110,6 @@
   <ItemGroup>
     <ClInclude Include="..\..\CCTAPI\CCTAPI\DataCapture.h" />
     <ClInclude Include="..\..\CCTAPI\CCTAPI\DataProcess.h" />
-    <ClInclude Include="CCTAPI.h" />
     <ClInclude Include="Resource.h" />
     <ClInclude Include="ScreenShot.h" />
     <ClInclude Include="stdafx.h" />
