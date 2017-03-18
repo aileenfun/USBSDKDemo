@@ -48,15 +48,6 @@
     <ClInclude Include="ScreenShot.h">
       <Filter>头文件</Filter>
     </ClInclude>
-    <ClInclude Include="..\..\CCTAPI\CCTAPI\DataCapture.h">
-      <Filter>头文件</Filter>
-    </ClInclude>
-    <ClInclude Include="..\..\CCTAPI\CCTAPI\DataProcess.h">
-      <Filter>头文件</Filter>
-    </ClInclude>
-    <ClInclude Include="CCTAPI.h">
-      <Filter>头文件</Filter>
-    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="UsbControl.cpp">
@@ -85,9 +76,6 @@
   </ItemGroup>
   <ItemGroup>
     <Library Include="CyUsb.lib">
-      <Filter>lib</Filter>
-    </Library>
-    <Library Include="Debug\CCTAPI.lib">
       <Filter>lib</Filter>
     </Library>
   </ItemGroup>

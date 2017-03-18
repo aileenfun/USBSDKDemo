@@ -9,7 +9,7 @@
 #ifdef _DEBUG
 #define new DEBUG_NEW
 #endif
-CUsbControlDlg *mainwindow;
+
 
 // CUsbControlApp
 
@@ -69,9 +69,7 @@ BOOL CUsbControlApp::InitInstance()
 
 	CUsbControlDlg dlg;
 	m_pMainWnd = &dlg;
-	mainwindow=&dlg;
 	INT_PTR nResponse = dlg.DoModal();//显示
-	//dlg.UpdateData(TRUE);
 	if (nResponse == IDOK)
 	{
 		// TODO: 在此放置处理何时用

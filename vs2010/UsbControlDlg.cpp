@@ -14,14 +14,17 @@ static char THIS_FILE[]=__FILE__;
 #define new DEBUG_NEW
 #endif
 
-int g_width=640;
+int g_width=752; 
 int g_height=480;
+HWND m_hwnd;
 cv::VideoWriter h_vw;
 volatile bool snap;
-	volatile bool b_timer1s;
+volatile bool save_all;
 // 用于应用程序“关于”菜单项的 CAboutDlg 对话框
-	HWND hwnd_mainwindow;
-	extern CUsbControlDlg* mainwindow;
+enum ReqValue
+{
+	TRIGMODE=0xD0,IMGDISP,EXPOGAIN,GAIN,EXPO,MIRROR,RCEXTR,TRIGPERIOD,RSTHW,SOFTTRIG,RSTSENSOR
+};
 class CAboutDlg : public CDialogEx
 {
 public:
@@ -52,7 +55,11 @@ BEGIN_MESSAGE_MAP(CAboutDlg, CDialogEx)
 	ON_WM_TIMER()
 END_MESSAGE_MAP()
 
+
 // CUsbControlDlg 对话框
+
+
+
 
 CUsbControlDlg::CUsbControlDlg(CWnd* pParent /*=NULL*/)
 	: CDialogEx(CUsbControlDlg::IDD, pParent)
@@ -82,7 +89,6 @@ CUsbControlDlg::CUsbControlDlg(CWnd* pParent /*=NULL*/)
 	m_bSave=FALSE;
 	m_Init = FALSE;
 	snap=false;
-	char temp[4];
 }
 
 CUsbControlDlg::~CUsbControlDlg()
@@ -102,7 +108,13 @@ void CUsbControlDlg::DoDataExchange(CDataExchange* pDX)
 	DDX_Control(pDX, IDC_EDIT2, m_Edit_Height);
 	DDX_Text(pDX, IDC_EDIT1, m_sEdit_Width);
 	DDX_Text(pDX, IDC_EDIT2, m_sEdit_Height);
-	DDX_Control(pDX, IDC_COMBODev, m_comboDevNum);
+	DDX_Control(pDX, IDC_COMBOTrigMode, cbTrigMode);
+	DDX_Control(pDX, IDC_EDITHwTrigFreq, eFpgaFreq);
+	DDX_Control(pDX, IDC_EDITGainValue, eGainValue);
+	DDX_Control(pDX, IDC_EDITExpoValue, eExpoValue);
+	DDX_Control(pDX, IDC_CHECKAutoGain, cbAutoGain);
+	DDX_Control(pDX, IDC_CHECKAutoExpo, cbAutoExpo);
+	DDX_Control(pDX, IDC_CHECK_SAVEALL, m_chk_save_all);
 }
 
 BEGIN_MESSAGE_MAP(CUsbControlDlg, CDialogEx)
@@ -123,16 +135,38 @@ BEGIN_MESSAGE_MAP(CUsbControlDlg, CDialogEx)
 	ON_EN_CHANGE(IDC_EDIT1, &CUsbControlDlg::OnEnChangeEdit1)
 	ON_EN_CHANGE(IDC_EDIT2, &CUsbControlDlg::OnEnChangeEdit2)
 	ON_BN_CLICKED(IDC_BTN_SNAP, &CUsbControlDlg::OnBnClickedBnSnap)
-	ON_CBN_SELCHANGE(IDC_COMBO1, &CUsbControlDlg::OnCbnSelchangeCombo1)
+	ON_CBN_SELCHANGE(IDC_COMBOTrigMode, &CUsbControlDlg::setTrigMode)
+	ON_EN_CHANGE(IDC_EDITGainValue, &CUsbControlDlg::setGainValue)
+	ON_BN_CLICKED(IDC_CHECKAutoGain, &CUsbControlDlg::setAutoGainExpo)
+	ON_BN_CLICKED(IDC_CHECKAutoExpo, &CUsbControlDlg::setAutoGainExpo)
+	ON_EN_CHANGE(IDC_EDITExpoValue, &CUsbControlDlg::setExpoValue)
+	ON_EN_CHANGE(IDC_EDITHwTrigFreq, &CUsbControlDlg::setFpgaFreq)
+	ON_BN_CLICKED(IDC_BUTTONSoftTrig, &CUsbControlDlg::OnBnClickedButtonsofttrig)
+	ON_BN_CLICKED(IDC_CHECK_SAVEALL, &CUsbControlDlg::OnBnClickedCheckSaveall)
 END_MESSAGE_MAP()
 
+
+BOOL CUsbControlDlg::PreTranslateMessage(MSG* pMsg)
+{
+	if( pMsg->message == WM_KEYDOWN )
+	{
+		if(pMsg->wParam == VK_RETURN)// || pMsg->wParam == VK_ESCAPE)
+		{
+			return TRUE;                // Do not process further
+		}
+	}
+
+	return CWnd::PreTranslateMessage(pMsg);
+}
 
 // CUsbControlDlg 消息处理程序
 
 BOOL CUsbControlDlg::OnInitDialog()
 {
 	CDialogEx::OnInitDialog();
+
 	// 将“关于...”菜单项添加到系统菜单中。
+
 	// IDM_ABOUTBOX 必须在系统命令范围内。
 	ASSERT((IDM_ABOUTBOX & 0xFFF0) == IDM_ABOUTBOX);
 	ASSERT(IDM_ABOUTBOX < 0xF000);
@@ -158,8 +192,6 @@ BOOL CUsbControlDlg::OnInitDialog()
 
 	// TODO: 在此添加额外的初始化代码
 	//------------------------------------
-	//mainwindow=GetDesktopWindow();
-	hwnd_mainwindow=::GetActiveWindow();
 	CRect cRect,wRect,mRect;
 	GetDesktopWindow()->GetWindowRect(wRect);
 	GetWindowRect(cRect);
@@ -169,6 +201,13 @@ BOOL CUsbControlDlg::OnInitDialog()
 	mRect.top=mRect.bottom-cRect.Height();
 	MoveWindow(mRect);
 	//------------------------------------
+	m_pFileRbf=new CFile();
+	m_pVideoDlg=new CVideoDlg();
+
+	m_pVideoDlg->Create(IDD_DLG_VIDEO,this);
+	m_pVideoDlg->ShowWindow(FALSE);
+	m_hDisplayDC=m_pVideoDlg->GetDisplayDC()->m_hDC;
+
 	SetTimer(1,1000,NULL);
 	m_iRdoDriver=(int)m_CyDriver;
 
@@ -182,16 +221,18 @@ BOOL CUsbControlDlg::OnInitDialog()
 		std::cerr<<"unable to load dll\n";
 		return TRUE;
 	}
-	icct_factory fac_func=reinterpret_cast<icct_factory>(
-		::GetProcAddress(dll_handle,"create_CCTAPI"));
-	if(!fac_func)
-	{
-		std::cerr<<"unable to load create_CCTAPI from dll\n";
-		return TRUE;
-	}
-	//h_cctapi=fac_func();
-	//h_cctapi=::create_CCTAPI();
+	//icct_factory fac_func=reinterpret_cast<icct_factory>(
+	//	::GetProcAddress(dll_handle,"create_CCTAPI"));
+
+	cbTrigMode.AddString(L"AutoTrig");
 	
+	cbTrigMode.InsertString(1,L"SoftTrig");
+	cbTrigMode.InsertString(2,L"FpgaTrig");
+	cbTrigMode.InsertString(3,L"FromOutSide");
+	cbTrigMode.SetCurSel(0);
+	cbTrigMode.SetMinVisibleItems(4);
+	cbAutoExpo.SetCheck(1);
+	cbAutoGain.SetCheck(1);
 	return TRUE;  // 除非将焦点设置到控件，否则返回 TRUE
 }
 
@@ -244,53 +285,133 @@ HCURSOR CUsbControlDlg::OnQueryDragIcon()
 {
 	return static_cast<HCURSOR>(m_hIcon);
 }
+void BMPHeader(int lWidth, int lHeight,byte* m_buf)
+{
+	int mlBpp=8;
+	bool lReverse=true;
+	BITMAPFILEHEADER bhh;
+	BITMAPINFOHEADER bih;
+	memset(&bhh,0,sizeof(BITMAPFILEHEADER));
+	memset(&bih,0,sizeof(BITMAPINFOHEADER));
 
+	int widthStep				=	(((lWidth * mlBpp) + 31) & (~31)) / 8; //每行实际占用的大小（每行都被填充到一个4字节边界）
+	int QUADSize 				= 	mlBpp==8?sizeof(RGBQUAD)*256:0;
+
+	//构造彩色图的文件头
+	bhh.bfOffBits				=	(DWORD)sizeof(BITMAPFILEHEADER) + (DWORD)sizeof(BITMAPINFOHEADER) + QUADSize; 
+	bhh.bfSize					=	(DWORD)sizeof(BITMAPFILEHEADER) + (DWORD)sizeof(BITMAPINFOHEADER) + QUADSize + widthStep*lHeight;  
+	bhh.bfReserved1				=	0; 
+	bhh.bfReserved2				=	0;
+	bhh.bfType					=	0x4d42;  
+
+	//构造彩色图的信息头
+	bih.biBitCount				=	mlBpp;
+	bih.biSize					=	sizeof(BITMAPINFOHEADER);
+	bih.biHeight				=	(lReverse?-1:1)*lHeight;
+	bih.biWidth					=	lWidth;  
+	bih.biPlanes				=	1;
+	bih.biCompression			=	BI_RGB;
+	bih.biSizeImage				=	widthStep*lHeight;  
+	bih.biXPelsPerMeter			=	0;  
+	bih.biYPelsPerMeter			=	0;  
+	bih.biClrUsed				=	0;  
+	bih.biClrImportant			=	0;  
+	
+	//构造灰度图的调色版
+	RGBQUAD rgbquad[256];
+	if(mlBpp==8)
+	{
+		for(int i=0;i<256;i++)
+		{
+			rgbquad[i].rgbBlue=i;
+			rgbquad[i].rgbGreen=i;
+			rgbquad[i].rgbRed=i;
+			rgbquad[i].rgbReserved=0;
+		}
+	}
+
+	int DIBSize = widthStep * lHeight;
+	//TRACE(_T("DIBSIze is %d"),DIBSize);
+
+	bool b_save_file	=true;
+	if(b_save_file)
+	{
+		CString strName;
+		CString camFolder;
+		camFolder.Format(L"d:\\c6UDP\\cam%d",0);
+		if(CreateDirectory(camFolder,NULL)||ERROR_ALREADY_EXISTS == GetLastError())
+		{
+			int iFileIndex=1;
+			do 
+			{
+				strName.Format(L"d:\\c6UDP\\cam%d\\V_%d.bmp",0,iFileIndex);
+				++iFileIndex;
+			} while (_waccess(strName,0)==0);
+			CT2CA pszConvertedAnsiString (strName);
+			std::string cvfilename(pszConvertedAnsiString);
+			
+			CFile file;  
+	if(file.Open(strName,CFile::modeWrite | CFile::modeCreate))  
+	{
+		file.Write((LPSTR)&bhh,sizeof(BITMAPFILEHEADER));  
+		file.Write((LPSTR)&bih,sizeof(BITMAPINFOHEADER));  
+		if(mlBpp==8) file.Write(&rgbquad,sizeof(RGBQUAD)*256);
+		file.Write(m_buf,DIBSize);  
+		file.Close();  
+		return ;  
+	}  
+		}
+	}
+
+	
+}
 
 void _stdcall RawCallBack(LPVOID lpParam,LPVOID lpUser)
 {
-	//BYTE *pDataBuffer = (BYTE*)lpParam;
-	DFrameStruct *imData=(DFrameStruct*)lpParam;
-	//CUsbControlDlg *pDlg=(CUsbControlDlg*)lpUser;
-	cv::Mat frame(imData->height,imData->width,CV_8UC1,imData->leftData.get());
-	cv::Mat frame1(imData->height,imData->width,CV_8UC1,imData->rightData.get());
-	//cv::Mat colored(g_height,g_width,CV_8UC3);
-	//cv::applyColorMap(frame,colored,cv::COLORMAP_JET)
+	BYTE *pDataBuffer = (BYTE*)lpParam;
+	CUsbControlDlg *pDlg=(CUsbControlDlg*)lpUser;
+	cv::Mat frame(g_height,g_width,CV_8UC1,pDataBuffer);
 	cv::imshow("disp",frame);
-	cv::imshow("disp1",frame1);
-	//cv::imshow("color",colored);
-	cv::waitKey(10);
-	if (b_timer1s==TRUE)
+	cv::waitKey(1);
+	//BMPHeader(g_width,g_height,pDataBuffer);
+		if(snap||save_all)
 	{
-		CString csIMU;
-		IMUDataStruct *m_IMU=imData->IMUData.get();
-		csIMU.Format(L"Accel       Gyro    \n x: %7d| %7d\n y:%7d|%7d\n z: %7d|%7d",
-			m_IMU[0].accelData[0],m_IMU[0].gyroData[0],
-			m_IMU[0].accelData[1],m_IMU[0].gyroData[1],
-			m_IMU[0].accelData[2],m_IMU[0].gyroData[2]);
-		mainwindow->setStatusText(csIMU);
-		
-	b_timer1s=FALSE;
-	}
+		CString strName;
+		CString camFolder;
+		//camFolder.Format(L"cam%d",0);
+		if(1)//CreateDirectory(camFolder,NULL)||ERROR_ALREADY_EXISTS == GetLastError())
+		{
+			int iFileIndex=1;
+			do 
+			{
+				strName.Format(L"V_%d.bmp",iFileIndex);
+				++iFileIndex;
+			} while (_waccess(strName,0)==0);
+			CT2CA pszConvertedAnsiString (strName);
+			std::string cvfilename(pszConvertedAnsiString);
 
-	if(snap==true)
-	{
-		cv::imwrite("snap.jpg",frame);
+		cv::imwrite(cvfilename,frame);
 		snap=false;
-	}
+		}
+		}
 	//h_vw.write(frame);//save video operation
-}
-void CUsbControlDlg::setStatusText(CString cs)
-{
-	SetDlgItemText(IDC_STATIC_TEXT,cs);
-	//UpdateData(TRUE);
 }
 void CUsbControlDlg::OnBnClickedBtnVideocapture()
 {
 	// TODO: 在此添加控件通知处理程序代码
 	//m_pVideoDlg->ShowWindow(TRUE);
+	
 	cv::namedWindow("disp");
-	cv::namedWindow("disp1");
-	if(h_cctapi->startCap(g_height,g_width,RawCallBack,0)<0)
+	CyUsb_Init();
+	m_byData[0]=(g_width&0xff<<8)>>8;
+	m_byData[1]=(g_width&0xff);
+	m_byData[2]=(g_height&0xff<<8)>>8;
+	m_byData[3]=(g_height&0xff);
+	m_sUsbOrder.ReqCode=IMGDISP;
+	m_sUsbOrder.DataBytes=4;
+	m_sUsbOrder.Direction=0;
+	SendOrder(&m_sUsbOrder);
+	if(h_cctapi->startCap(g_height,g_width,RawCallBack)<0)
 	{
 		SetDlgItemText(IDC_STATIC_TEXT,L"USB设备打开失败！");
 		return;
@@ -299,15 +420,16 @@ void CUsbControlDlg::OnBnClickedBtnVideocapture()
 	{
 		SetDlgItemText(IDC_STATIC_TEXT,L"采集中...");
 		CheckRadioButton(IDC_RADIO_NORMAL,IDC_RADIO_XYMIRROR,IDC_RADIO_NORMAL);
+		m_bUsbOpen=TRUE;
 	}
-	/*std::string filename="videofile.avi";
-	cv::Size videosize=cv::Size(g_width,g_height);
-	h_vw.open(filename,CV_FOURCC('X','V','I','D'),15,videosize,0);
-	if(!h_vw.isOpened())
-	{
-		SetDlgItemText(IDC_STATIC_TEXT,L"保存视频失败。");
-		return;
-	}*/
+	//std::string filename="videofile.avi";
+	//cv::Size videosize=cv::Size(g_width,g_height);
+	////h_vw.open(filename,CV_FOURCC('X','V','I','D'),15,videosize,0);
+	//if(!h_vw.isOpened())
+	//{
+	//	SetDlgItemText(IDC_STATIC_TEXT,L"保存视频失败。");
+	//	return;
+	//}
 
 }
 
@@ -320,8 +442,8 @@ void CUsbControlDlg::OnBnClickedBtnStopcapture()
 		return;
 	}
 	cv::destroyWindow("disp");
-	cv::destroyWindow("disp1");
 	SetDlgItemText(IDC_STATIC_TEXT,L" ");
+	m_bUsbOpen=FALSE;
 }
 
 void CUsbControlDlg::OnDestroy()
@@ -373,8 +495,6 @@ void CUsbControlDlg::OnTimer(UINT_PTR nIDEvent)
 			//		m_pVideoDlg->SetWindowText(str);
 			//	}
 			//}
-			b_timer1s=true;
-			UpdateData(TRUE);
 		}
 		break;
 	default:
@@ -386,7 +506,7 @@ void CUsbControlDlg::OnTimer(UINT_PTR nIDEvent)
 void CUsbControlDlg::OnBnClickedRadioProcType()
 {
 	UpdateData(TRUE);
-	h_cctapi->setMirrorType(DataProcessType(m_iProcType));
+	//h_cctapi->setMirrorType(DataProcessType(m_iProcType));
 }
 
 
@@ -496,7 +616,136 @@ void CUsbControlDlg::OnBnClickedBnSnap()
 }
 
 
-void CUsbControlDlg::OnCbnSelchangeCombo1()
+void CUsbControlDlg::setTrigMode()
+{
+	if(!m_bUsbOpen)
+		return;
+	CString s_temp;
+	UpdateData(true);
+	eFpgaFreq.GetWindowText(s_temp);
+	int fpgafreq= _tstoi(s_temp);
+	s_temp.ReleaseBuffer();
+	m_byData[0]=cbTrigMode.GetCurSel()&0xff;
+	m_byData[1]=fpgafreq&0xff;
+	m_sUsbOrder.DataBytes=2;
+	m_sUsbOrder.ReqCode=TRIGMODE;
+	m_sUsbOrder.Direction=0;
+	SendOrder(&m_sUsbOrder);
+	if(cbTrigMode.GetCurSel()==2&&fpgafreq<=0)
+	{
+		SetDlgItemText(IDC_STATIC_TEXT,L"Need Fpga Freq");
+	}
+	return;
+}
+
+
+void CUsbControlDlg::setFpgaFreq()
+{
+	if(!m_bUsbOpen)
+		return;
+	CString s_temp;
+	UpdateData(true);
+	eFpgaFreq.GetWindowText(s_temp);
+	int fpgafreq= _tstoi(s_temp);
+	s_temp.ReleaseBuffer();
+	if(cbTrigMode.GetCurSel()==2&&fpgafreq>0)
+	{
+		m_byData[0]=2;
+		m_byData[1]=fpgafreq&0xff;
+		m_sUsbOrder.DataBytes=2;
+		m_sUsbOrder.ReqCode=TRIGMODE;
+		m_sUsbOrder.Direction=0;
+		SendOrder(&m_sUsbOrder);
+	}
+	else
+	{
+		SetDlgItemText(IDC_STATIC_TEXT,L"Check Trig Mode");
+	}
+}
+
+
+void CUsbControlDlg::setGainValue()
+{
+	if(!m_bUsbOpen)
+		return;
+	CString s_temp;
+	UpdateData(true);
+	eGainValue.GetWindowText(s_temp);
+	int GainValue= _tstoi(s_temp);
+	s_temp.ReleaseBuffer();
+	if(cbAutoExpo.GetCheck()==false&&GainValue>0)
+	{
+		m_byData[0]=GainValue&0xff;
+		m_sUsbOrder.DataBytes=1;
+		m_sUsbOrder.ReqCode=GAIN;
+		m_sUsbOrder.Direction=0;
+		SendOrder(&m_sUsbOrder);
+	}
+	else
+	{
+		SetDlgItemText(IDC_STATIC_TEXT,L"Check Gain?");
+	}
+}
+
+
+void CUsbControlDlg::setAutoGainExpo()
+{
+	if(!m_bUsbOpen)
+		return;
+	m_byData[0]=cbAutoExpo.GetCheck()==true?1:0;
+	m_byData[0]+=(cbAutoGain.GetCheck()==true?1:0)<<1;
+	m_sUsbOrder.DataBytes=1;
+	m_sUsbOrder.ReqCode=EXPOGAIN;
+	m_sUsbOrder.Direction=0;
+	SendOrder(&m_sUsbOrder);
+}
+
+
+void CUsbControlDlg::setExpoValue()
+{
+	if(!m_bUsbOpen)
+		return;
+	CString s_temp;
+	UpdateData(true);
+	eExpoValue.GetWindowText(s_temp);
+	int ExpoValue= _tstoi(s_temp);
+	s_temp.ReleaseBuffer();
+	if(cbAutoExpo.GetCheck()==false&&ExpoValue>0)
+	{
+		m_byData[0]=(ExpoValue&0xff<<8)>>8;
+		m_byData[1]=ExpoValue&0xff;
+		m_sUsbOrder.DataBytes=2;
+		m_sUsbOrder.ReqCode=EXPO;
+		m_sUsbOrder.Direction=0;
+		SendOrder(&m_sUsbOrder);
+	}
+	else
+	{
+		SetDlgItemText(IDC_STATIC_TEXT,L"Check Expo?");
+	}
+}
+
+
+
+
+void CUsbControlDlg::OnBnClickedButtonsofttrig()
+{
+	if(cbTrigMode.GetCurSel()==1)
+	{
+		m_sUsbOrder.ReqCode=SOFTTRIG;
+		m_sUsbOrder.DataBytes=0;
+		m_sUsbOrder.Direction=0;
+		SendOrder(&m_sUsbOrder);
+	}
+	else
+	{
+		SetDlgItemText(IDC_STATIC_TEXT,L"Triger Mode?");
+	}
+}
+
+
+void CUsbControlDlg::OnBnClickedCheckSaveall()
 {
 	// TODO: Add your control notification handler code here
+	save_all=m_chk_save_all.GetCheck();
 }

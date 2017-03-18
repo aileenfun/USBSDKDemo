@@ -3,9 +3,8 @@
 //
 
 #pragma once
-#include "../../CCTAPI/CCTAPI/DataProcess.h"
-#include "CCTAPI.h"
-#include "../../CCTAPI/CCTAPI/CyUsb.h"
+#include "Include/CCTAPI.h"
+#include "Include/CyUsb.h"
 #include "VideoDlg.h"
 #include "afxwin.h"
 #include <cv.hpp>
@@ -84,7 +83,6 @@ private:
 	BOOL          m_Init;
 	CString       m_strDataFileName;
 	CCCTAPIApp *h_cctapi;
-	
 
 public:
 	afx_msg void OnBnClickedBtnCreatebmp();
@@ -96,11 +94,24 @@ public:
 	CString m_sEdit_Height;
 	afx_msg void OnBnClickedButton2();
 	void saveVideoFun(cv::Mat frame);
-	
+	BOOL PreTranslateMessage(MSG* pMsg);
 	int test;
 	int test2;
 	afx_msg void OnBnClickedBnSnap();
-	afx_msg void OnCbnSelchangeCombo1();
-	CComboBox m_comboDevNum;
-	void setStatusText(CString cs);
+	CComboBox cbTrigMode;
+	CEdit eFpgaFreq;
+	CEdit eGainValue;
+	CEdit eExpoValue;
+	afx_msg void setTrigMode();
+//	afx_msg void setFpgaFreq();
+	afx_msg void setGainValue();
+	CButton cbAutoGain;
+	CButton cbAutoExpo;
+	afx_msg void setAutoGainExpo();
+	afx_msg void setExpoValue();
+	afx_msg void setFpgaFreq();
+	afx_msg void OnBnClickedButtonsofttrig();
+
+	CButton m_chk_save_all;
+	afx_msg void OnBnClickedCheckSaveall();
 };
