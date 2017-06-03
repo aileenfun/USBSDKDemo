@@ -7,23 +7,27 @@
 #include "UsbControlDlg.h"
 #include "afxdialogex.h"
 
-
 #ifdef _DEBUG
 #undef THIS_FILE
 static char THIS_FILE[]=__FILE__;
 #define new DEBUG_NEW
 #endif
 
-int g_width=752; 
+int g_width=640; 
 int g_height=480;
 HWND m_hwnd;
-cv::VideoWriter h_vw;
+//cv::VideoWriter h_vw;
 volatile bool snap;
 volatile bool save_all;
+volatile bool b_timer1s;
+extern CUsbControlDlg* mainwindow;
+CDisplay *g_pdisplay;
+byte * imgBuf;
 // 用于应用程序“关于”菜单项的 CAboutDlg 对话框
 enum ReqValue
 {
-	TRIGMODE=0xD0,IMGDISP,EXPOGAIN,GAIN,EXPO,MIRROR,RCEXTR,TRIGPERIOD,RSTHW,SOFTTRIG,RSTSENSOR
+	TRIGMODE=0xD0,IMGDISP,EXPOGAIN,GAIN,EXPO,MIRROR,RCEXTR,TRIGPERIOD,RSTHW,SOFTTRIG,RSTSENSOR,WRS1DATA=0xDB,WRS2DATA,IMUSAMRAT=0xDE,
+	MAXEXPO,oEEADDR=0xE9,WREE,RDEE,SADDR,RDS1DATA,RDS2DATA
 };
 class CAboutDlg : public CDialogEx
 {
@@ -77,8 +81,6 @@ CUsbControlDlg::CUsbControlDlg(CWnd* pParent /*=NULL*/)
 
 	m_hDisplayDC=NULL;
 	m_hThread=NULL;
-	m_pReadBuff=new char[ReadDataBytes];
-	memset(m_pReadBuff,0,sizeof(char)*ReadDataBytes);
 
 	m_bCloseWnd=FALSE;
 	m_lBytePerSecond=0;
@@ -89,15 +91,11 @@ CUsbControlDlg::CUsbControlDlg(CWnd* pParent /*=NULL*/)
 	m_bSave=FALSE;
 	m_Init = FALSE;
 	snap=false;
+	g_pdisplay=new CDisplay();
 }
 
 CUsbControlDlg::~CUsbControlDlg()
 {
-	if(m_pReadBuff!=NULL)
-	{
-		delete[] m_pReadBuff;
-		m_pReadBuff=NULL;
-	}
 }
 
 void CUsbControlDlg::DoDataExchange(CDataExchange* pDX)
@@ -115,6 +113,14 @@ void CUsbControlDlg::DoDataExchange(CDataExchange* pDX)
 	DDX_Control(pDX, IDC_CHECKAutoGain, cbAutoGain);
 	DDX_Control(pDX, IDC_CHECKAutoExpo, cbAutoExpo);
 	DDX_Control(pDX, IDC_CHECK_SAVEALL, m_chk_save_all);
+	DDX_Control(pDX, IDC_EDITMaxExpo, MaxExpo);
+	DDX_Control(pDX, IDC_EDITIMUSMPRate, IMUSampleRate);
+	DDX_Control(pDX, IDC_EDITS1ADDR, S1ADDR);
+	DDX_Control(pDX, IDC_EDITS1Data, S1DATA);
+	DDX_Control(pDX, IDC_EDITS2Addr, S2ADDR);
+	DDX_Control(pDX, IDC_EDITS2Data, S2DATA);
+	DDX_Control(pDX, IDC_EDITIMUSMPRate7, EEADDR);
+	DDX_Control(pDX, IDC_EDITIMUSMPRate6, EEDATA);
 }
 
 BEGIN_MESSAGE_MAP(CUsbControlDlg, CDialogEx)
@@ -143,6 +149,14 @@ BEGIN_MESSAGE_MAP(CUsbControlDlg, CDialogEx)
 	ON_EN_CHANGE(IDC_EDITHwTrigFreq, &CUsbControlDlg::setFpgaFreq)
 	ON_BN_CLICKED(IDC_BUTTONSoftTrig, &CUsbControlDlg::OnBnClickedButtonsofttrig)
 	ON_BN_CLICKED(IDC_CHECK_SAVEALL, &CUsbControlDlg::OnBnClickedCheckSaveall)
+	ON_EN_CHANGE(IDC_EDITMaxExpo, &CUsbControlDlg::OnEnChangeEditmaxexpo)
+	ON_EN_CHANGE(IDC_EDITIMUSMPRate, &CUsbControlDlg::OnEnChangeEditimusmprate)
+	ON_BN_CLICKED(IDC_BUTTONRDS1, &CUsbControlDlg::OnBnClickedButtonrds1)
+	ON_BN_CLICKED(IDC_BUTTONWRS1, &CUsbControlDlg::OnBnClickedButtonwrs1)
+	ON_BN_CLICKED(IDC_BUTTONRDS2, &CUsbControlDlg::OnBnClickedButtonrds2)
+	ON_BN_CLICKED(IDC_BUTTONWRS2, &CUsbControlDlg::OnBnClickedButtonwrs2)
+	ON_BN_CLICKED(IDC_BUTTONEERD, &CUsbControlDlg::OnBnClickedButtoneerd)
+	ON_BN_CLICKED(IDC_BUTTONEEWR, &CUsbControlDlg::OnBnClickedButtoneewr)
 END_MESSAGE_MAP()
 
 
@@ -206,8 +220,11 @@ BOOL CUsbControlDlg::OnInitDialog()
 
 	m_pVideoDlg->Create(IDD_DLG_VIDEO,this);
 	m_pVideoDlg->ShowWindow(FALSE);
+	
 	m_hDisplayDC=m_pVideoDlg->GetDisplayDC()->m_hDC;
-
+	//m_pDisplay=new CDisplay();
+	//m_pDisplay->Open(CDC::FromHandle(m_hDisplayDC),CRect(0,0,g_width,g_height));
+	g_pdisplay->Open(CDC::FromHandle(m_hDisplayDC),CRect(0,0,g_width,g_height));
 	SetTimer(1,1000,NULL);
 	m_iRdoDriver=(int)m_CyDriver;
 
@@ -216,11 +233,7 @@ BOOL CUsbControlDlg::OnInitDialog()
 	m_pBrush[1].CreateSolidBrush(RGB(174,238,250));
 
 	HINSTANCE dll_handle=::LoadLibraryA("CCTAPI.dll");
-	if(!dll_handle)
-	{
-		std::cerr<<"unable to load dll\n";
-		return TRUE;
-	}
+
 	//icct_factory fac_func=reinterpret_cast<icct_factory>(
 	//	::GetProcAddress(dll_handle,"create_CCTAPI"));
 
@@ -233,6 +246,7 @@ BOOL CUsbControlDlg::OnInitDialog()
 	cbTrigMode.SetMinVisibleItems(4);
 	cbAutoExpo.SetCheck(1);
 	cbAutoGain.SetCheck(1);
+	imgBuf=new byte[g_height*g_width];
 	return TRUE;  // 除非将焦点设置到控件，否则返回 TRUE
 }
 
@@ -285,7 +299,62 @@ HCURSOR CUsbControlDlg::OnQueryDragIcon()
 {
 	return static_cast<HCURSOR>(m_hIcon);
 }
-void BMPHeader(int lWidth, int lHeight,byte* m_buf)
+void CUsbControlDlg::initBMPHeader(int lWidth, int lHeight,BITMAPINFO*bmi)
+{
+	int mlBpp=8;
+	bool lReverse=true;
+	BITMAPFILEHEADER bhh;
+	BITMAPINFOHEADER bih;
+	memset(&bhh,0,sizeof(BITMAPFILEHEADER));
+	memset(&bih,0,sizeof(BITMAPINFOHEADER));
+
+	int widthStep				=	(((lWidth * mlBpp) + 31) & (~31)) / 8; //每行实际占用的大小（每行都被填充到一个4字节边界）
+	int QUADSize 				= 	mlBpp==8?sizeof(RGBQUAD)*256:0;
+
+	//构造彩色图的文件头
+	bhh.bfOffBits				=	(DWORD)sizeof(BITMAPFILEHEADER) + (DWORD)sizeof(BITMAPINFOHEADER) + QUADSize; 
+	bhh.bfSize					=	(DWORD)sizeof(BITMAPFILEHEADER) + (DWORD)sizeof(BITMAPINFOHEADER) + QUADSize + widthStep*lHeight;  
+	bhh.bfReserved1				=	0; 
+	bhh.bfReserved2				=	0;
+	bhh.bfType					=	0x4d42;  
+
+	//构造彩色图的信息头
+	bih.biBitCount				=	mlBpp;
+	bih.biSize					=	sizeof(BITMAPINFOHEADER);
+	bih.biHeight				=	(lReverse?-1:1)*lHeight;
+	bih.biWidth					=	lWidth;  
+	bih.biPlanes				=	1;
+	bih.biCompression			=	BI_RGB;
+	bih.biSizeImage				=	widthStep*lHeight;  
+	bih.biXPelsPerMeter			=	0;  
+	bih.biYPelsPerMeter			=	0;  
+	bih.biClrUsed				=	0;  
+	bih.biClrImportant			=	0;  
+
+	
+	//构造灰度图的调色版
+	RGBQUAD rgbquad[256];
+	if(mlBpp==8)
+	{
+		for(int i=0;i<256;i++)
+		{
+			rgbquad[i].rgbBlue=i;
+			rgbquad[i].rgbGreen=i;
+			rgbquad[i].rgbRed=i;
+			rgbquad[i].rgbReserved=0;
+			bmi->bmiColors[i].rgbRed=i;
+			bmi->bmiColors[i].rgbGreen=i;
+			bmi->bmiColors[i].rgbBlue=i;
+			bmi->bmiColors[i].rgbReserved=0;
+		}
+	}
+
+	//int DIBSize = widthStep * lHeight;
+	memcpy(&(bmi->bmiHeader),&bih,sizeof(bih));
+	//m_bmi->bmiHeader=bih;
+
+}
+void CUsbControlDlg::BMPHeader(int lWidth, int lHeight,byte* m_buf)
 {
 	int mlBpp=8;
 	bool lReverse=true;
@@ -368,13 +437,23 @@ void BMPHeader(int lWidth, int lHeight,byte* m_buf)
 
 void _stdcall RawCallBack(LPVOID lpParam,LPVOID lpUser)
 {
-	BYTE *pDataBuffer = (BYTE*)lpParam;
+	DFrameStruct *imData=(DFrameStruct*)lpParam;
 	CUsbControlDlg *pDlg=(CUsbControlDlg*)lpUser;
-	cv::Mat frame(g_height,g_width,CV_8UC1,pDataBuffer);
+
+	
+	//memcpy(imgBuf,imData->leftData.get(),imData->height*imData->width);
+	//StretchDIBits(mainwindow->m_pDisplay->m_pMemDC->m_hDC,0,0,g_width,g_height,0,0,g_width,g_height,imgBuf,&(pDlg->m_bmi),DIB_RGB_COLORS,SRCCOPY);
+	//checkcolum(imgBuf,imData->width);
+//	StretchDIBits(g_pdisplay->m_pMemDC->m_hDC,0,0,g_width,g_height,0,0,g_width,g_height,imgBuf,&(pDlg->m_bmi),DIB_RGB_COLORS,SRCCOPY);
+//	g_pdisplay->Display();
+	//delete imgBuf;
+	
+	cv::Mat frame(imData->height,imData->width,CV_8UC1,imData->leftData.get());
+	cv::Mat frame1(imData->height,imData->width,CV_8UC1,imData->rightData.get());
 	cv::imshow("disp",frame);
+	cv::imshow("disp1",frame1);
 	cv::waitKey(1);
-	//BMPHeader(g_width,g_height,pDataBuffer);
-		if(snap||save_all)
+	if(snap||save_all)
 	{
 		CString strName;
 		CString camFolder;
@@ -390,18 +469,39 @@ void _stdcall RawCallBack(LPVOID lpParam,LPVOID lpUser)
 			CT2CA pszConvertedAnsiString (strName);
 			std::string cvfilename(pszConvertedAnsiString);
 
-		cv::imwrite(cvfilename,frame);
+		//cv::imwrite(cvfilename,frame);
 		snap=false;
 		}
 		}
+		
+	
+	if (b_timer1s==TRUE)
+	{
+		CString csIMU;
+		IMUDataStruct *m_IMU=imData->IMUData.get();
+		csIMU.Format(L"Accel       Gyro    \n x: %7d| %7d\n y:%7d|%7d\n z: %7d|%7d\n expotime:%d",
+			m_IMU[0].accelData[0],m_IMU[0].gyroData[0],
+			m_IMU[0].accelData[1],m_IMU[0].gyroData[1],
+			m_IMU[0].accelData[2],m_IMU[0].gyroData[2],
+			imData->expotime);
+		mainwindow->setStatusText(csIMU);
+		
+	b_timer1s=FALSE;
+	}
+	
 	//h_vw.write(frame);//save video operation
+}
+void CUsbControlDlg::setStatusText(CString cs)
+{
+	SetDlgItemText(IDC_STATIC_TEXT,cs);
+	//UpdateData(TRUE);
 }
 void CUsbControlDlg::OnBnClickedBtnVideocapture()
 {
 	// TODO: 在此添加控件通知处理程序代码
 	//m_pVideoDlg->ShowWindow(TRUE);
-	
 	cv::namedWindow("disp");
+	cv::namedWindow("disp1");
 	CyUsb_Init();
 	m_byData[0]=(g_width&0xff<<8)>>8;
 	m_byData[1]=(g_width&0xff);
@@ -411,7 +511,9 @@ void CUsbControlDlg::OnBnClickedBtnVideocapture()
 	m_sUsbOrder.DataBytes=4;
 	m_sUsbOrder.Direction=0;
 	SendOrder(&m_sUsbOrder);
-	if(h_cctapi->startCap(g_height,g_width,RawCallBack)<0)
+	initBMPHeader(g_width,g_height,&m_bmi);
+	if(h_cctapi->startCap(g_height,g_width,RawCallBack,(LPVOID*)this,0)<0)
+	//if(h_cctapi->startCap(g_height,g_width,RawCallBack,0)<0)
 	{
 		SetDlgItemText(IDC_STATIC_TEXT,L"USB设备打开失败！");
 		return;
@@ -441,7 +543,7 @@ void CUsbControlDlg::OnBnClickedBtnStopcapture()
 		SetDlgItemText(IDC_STATIC_TEXT,L"尚未采集");
 		return;
 	}
-	cv::destroyWindow("disp");
+	//cv::destroyWindow("disp");
 	SetDlgItemText(IDC_STATIC_TEXT,L" ");
 	m_bUsbOpen=FALSE;
 }
@@ -495,6 +597,8 @@ void CUsbControlDlg::OnTimer(UINT_PTR nIDEvent)
 			//		m_pVideoDlg->SetWindowText(str);
 			//	}
 			//}
+			b_timer1s=true;
+			UpdateData(TRUE);
 		}
 		break;
 	default:
@@ -648,7 +752,7 @@ void CUsbControlDlg::setFpgaFreq()
 	eFpgaFreq.GetWindowText(s_temp);
 	int fpgafreq= _tstoi(s_temp);
 	s_temp.ReleaseBuffer();
-	if(cbTrigMode.GetCurSel()==2&&fpgafreq>0)
+	if(cbTrigMode.GetCurSel()==2&&fpgafreq>10&&fpgafreq<60)
 	{
 		m_byData[0]=2;
 		m_byData[1]=fpgafreq&0xff;
@@ -659,7 +763,7 @@ void CUsbControlDlg::setFpgaFreq()
 	}
 	else
 	{
-		SetDlgItemText(IDC_STATIC_TEXT,L"Check Trig Mode");
+		SetDlgItemText(IDC_STATIC_TEXT,L"Check Trig Mode && fpga freq 10~50");
 	}
 }
 
@@ -748,4 +852,243 @@ void CUsbControlDlg::OnBnClickedCheckSaveall()
 {
 	// TODO: Add your control notification handler code here
 	save_all=m_chk_save_all.GetCheck();
+}
+
+
+void CUsbControlDlg::OnEnChangeEditmaxexpo()
+{
+	// TODO:  If this is a RICHEDIT control, the control will not
+	// send this notification unless you override the CDialogEx::OnInitDialog()
+	// function and call CRichEditCtrl().SetEventMask()
+	// with the ENM_CHANGE flag ORed into the mask.
+
+	// TODO:  Add your control notification handler code here
+	if(!m_bUsbOpen)
+		return;
+	CString s_temp;
+	UpdateData(true);
+	MaxExpo.GetWindowText(s_temp);
+	int iMaxExpo= _tstoi(s_temp);
+	s_temp.ReleaseBuffer();
+	if(cbAutoExpo.GetCheck()==true&&iMaxExpo>0)
+	{
+		iMaxExpo=iMaxExpo/27.185;
+		m_byData[0]=(iMaxExpo&0xff<<8)>>8;
+		m_byData[1]=iMaxExpo&0xff;
+		m_sUsbOrder.DataBytes=2;
+		m_sUsbOrder.ReqCode=MAXEXPO;
+		m_sUsbOrder.Direction=0;
+		SendOrder(&m_sUsbOrder);
+	}
+	else
+	{
+		SetDlgItemText(IDC_STATIC_TEXT,L"Check Expo?");
+	}
+}
+
+
+void CUsbControlDlg::OnEnChangeEditimusmprate()
+{
+	// TODO:  If this is a RICHEDIT control, the control will not
+	// send this notification unless you override the CDialogEx::OnInitDialog()
+	// function and call CRichEditCtrl().SetEventMask()
+	// with the ENM_CHANGE flag ORed into the mask.
+
+	// TODO:  Add your control notification handler code here
+	//if(!m_bUsbOpen)
+		//return;
+	CString s_temp;
+	UpdateData(true);
+	IMUSampleRate.GetWindowText(s_temp);
+	int iIMUSR= _tstoi(s_temp);
+	s_temp.ReleaseBuffer();
+	if(iIMUSR>0&&iIMUSR<21)
+	{
+		m_byData[0]=iIMUSR;
+		//m_byData[1]=iIMUSR&0xff;
+		m_sUsbOrder.DataBytes=1;
+		m_sUsbOrder.ReqCode=IMUSAMRAT;
+		m_sUsbOrder.Direction=0;
+		SendOrder(&m_sUsbOrder);
+	}
+	else
+	{
+		SetDlgItemText(IDC_STATIC_TEXT,L"imu sample rate 1~20");
+	}
+	
+}
+
+
+void CUsbControlDlg::OnBnClickedButtonrds1()
+{
+	// TODO: Add your control notification handler code here
+	CString s_temp;
+	UpdateData(true);
+	S1ADDR.GetWindowText(s_temp);
+	int is1addr= _tstoi(s_temp);
+	//s_temp.ReleaseBuffer();
+
+	//write address
+	m_byData[0]=is1addr;
+	m_sUsbOrder.ReqCode=SADDR;
+	m_sUsbOrder.DataBytes=1;
+	m_sUsbOrder.Direction=0;
+	SendOrder(&m_sUsbOrder);
+
+	//read
+	m_sUsbOrder.ReqCode=RDS1DATA;
+	m_sUsbOrder.DataBytes=2;
+	m_sUsbOrder.Direction=1;
+	SendOrder(&m_sUsbOrder);
+	UINT8 rxval[2];
+	memcpy(rxval,m_byData,2);
+	int irxval=rxval[1]<<8;
+	irxval+=rxval[0];
+	s_temp.Format(_T("%x"),irxval);
+	S1DATA.SetWindowTextW(s_temp);
+
+}
+
+
+void CUsbControlDlg::OnBnClickedButtonwrs1()
+{
+	// TODO: Add your control notification handler code here
+	CString s_temp;
+	UpdateData(true);
+	S1ADDR.GetWindowText(s_temp);
+	int is1addr= _tstoi(s_temp);
+	//s_temp.ReleaseBuffer();
+
+	//write address
+	m_byData[0]=is1addr;
+	m_sUsbOrder.ReqCode=SADDR;
+	m_sUsbOrder.DataBytes=1;
+	m_sUsbOrder.Direction=0;
+	SendOrder(&m_sUsbOrder);
+
+	//write data
+	S1DATA.GetWindowText(s_temp);
+	int is1data= _tstoi(s_temp);
+	m_byData[0]=(is1data&0xff<<8)>>8;
+	m_byData[1]=is1data&0xff;
+	m_sUsbOrder.DataBytes=2;
+	m_sUsbOrder.ReqCode=WRS1DATA;
+	m_sUsbOrder.Direction=0;
+	SendOrder(&m_sUsbOrder);
+}
+
+
+void CUsbControlDlg::OnBnClickedButtonrds2()
+{
+	// TODO: Add your control notification handler code here
+	CString s_temp;
+	UpdateData(true);
+	S2ADDR.GetWindowText(s_temp);
+	int is1addr= _tstoi(s_temp);
+	//s_temp.ReleaseBuffer();
+
+	//write address
+	m_byData[0]=is1addr;
+	m_sUsbOrder.ReqCode=SADDR;
+	m_sUsbOrder.DataBytes=1;
+	m_sUsbOrder.Direction=0;
+	SendOrder(&m_sUsbOrder);
+
+	//read
+	m_sUsbOrder.ReqCode=RDS2DATA;
+	m_sUsbOrder.DataBytes=2;
+	m_sUsbOrder.Direction=1;
+	SendOrder(&m_sUsbOrder);
+	UINT8 rxval[2];
+	memcpy(rxval,m_byData,2);
+	int irxval=rxval[1]<<8;
+	irxval+=rxval[0];
+	s_temp.Format(_T("%x"),irxval);
+	S2DATA.SetWindowTextW(s_temp);
+}
+
+
+void CUsbControlDlg::OnBnClickedButtonwrs2()
+{
+	// TODO: Add your control notification handler code here
+	CString s_temp;
+	UpdateData(true);
+	S2ADDR.GetWindowText(s_temp);
+	int is1addr= _tstoi(s_temp);
+	//s_temp.ReleaseBuffer();
+
+	//write address
+	m_byData[0]=is1addr;
+	m_sUsbOrder.ReqCode=SADDR;
+	m_sUsbOrder.DataBytes=1;
+	m_sUsbOrder.Direction=0;
+	SendOrder(&m_sUsbOrder);
+
+	//write data
+	S2DATA.GetWindowText(s_temp);
+	int is1data= _tstoi(s_temp);
+	m_byData[0]=(is1data&0xff<<8)>>8;
+	m_byData[1]=is1data&0xff;
+	m_sUsbOrder.DataBytes=2;
+	m_sUsbOrder.ReqCode=WRS2DATA;
+	m_sUsbOrder.Direction=0;
+	SendOrder(&m_sUsbOrder);
+}
+
+
+void CUsbControlDlg::OnBnClickedButtoneerd()
+{
+	// TODO: Add your control notification handler code here
+	CString s_temp;
+	UpdateData(true);
+	EEADDR.GetWindowText(s_temp);
+	int is1addr= _tstoi(s_temp);
+	//s_temp.ReleaseBuffer();
+
+	//write address
+	m_byData[0]=(is1addr&0xff<<8)>>8;
+	m_byData[1]=is1addr&0xff;
+	m_sUsbOrder.ReqCode=oEEADDR;
+	m_sUsbOrder.DataBytes=2;
+	m_sUsbOrder.Direction=0;
+	SendOrder(&m_sUsbOrder);
+
+	//read
+	m_sUsbOrder.ReqCode=RDEE;
+	m_sUsbOrder.DataBytes=1;
+	m_sUsbOrder.Direction=1;
+	SendOrder(&m_sUsbOrder);
+	UINT8 rxval[1];
+	memcpy(rxval,m_byData,1);
+	int irxval=rxval[0];
+	s_temp.Format(_T("%x"),irxval);
+	EEDATA.SetWindowTextW(s_temp);
+}
+
+
+void CUsbControlDlg::OnBnClickedButtoneewr()
+{
+	// TODO: Add your control notification handler code here
+	CString s_temp;
+	UpdateData(true);
+	EEADDR.GetWindowText(s_temp);
+	int is1addr= _tstoi(s_temp);
+	//s_temp.ReleaseBuffer();
+
+	//write address
+	m_byData[0]=(is1addr&0xff<<8)>>8;
+	m_byData[1]=is1addr&0xff;
+	m_sUsbOrder.ReqCode=oEEADDR;
+	m_sUsbOrder.DataBytes=2;
+	m_sUsbOrder.Direction=0;
+	SendOrder(&m_sUsbOrder);
+
+	//write data
+	EEDATA.GetWindowText(s_temp);
+	int is1data= _tstoi(s_temp);
+	m_byData[0]=is1data;
+	m_sUsbOrder.DataBytes=1;
+	m_sUsbOrder.ReqCode=WREE;
+	m_sUsbOrder.Direction=0;
+	SendOrder(&m_sUsbOrder);
 }

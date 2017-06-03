@@ -11,11 +11,11 @@ public:
 	void Display();
 	BOOL SetRect(CRect rt );
 	CDC *GetMemDC();
-
+	CDC		*m_pMemDC;
 private:
 	CDC		*m_pDcDisplay;
 	CRect	m_rtDisplay;
-	CDC		*m_pMemDC;
+
 	CBitmap *m_pMemBitmap;
 	HDC		m_hDc;
 };

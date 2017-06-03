@@ -9,6 +9,7 @@
 #ifdef _DEBUG
 #define new DEBUG_NEW
 #endif
+CUsbControlDlg *mainwindow;
 
 
 // CUsbControlApp
@@ -69,6 +70,7 @@ BOOL CUsbControlApp::InitInstance()
 
 	CUsbControlDlg dlg;
 	m_pMainWnd = &dlg;
+	mainwindow=&dlg;
 	INT_PTR nResponse = dlg.DoModal();//œ‘ æ
 	if (nResponse == IDOK)
 	{

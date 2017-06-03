@@ -3,10 +3,12 @@
 //
 
 #pragma once
-#include "Include/CCTAPI.h"
-#include "Include/CyUsb.h"
+#include "CCTAPI.h"
+#include "CyUsb.h"
 #include "VideoDlg.h"
+#include "Display.h"
 #include "afxwin.h"
+
 #include <cv.hpp>
 #include <opencv.hpp>
 #include <opencv2/core/core.hpp>
@@ -93,7 +95,7 @@ public:
 	CString m_sEdit_Width;
 	CString m_sEdit_Height;
 	afx_msg void OnBnClickedButton2();
-	void saveVideoFun(cv::Mat frame);
+	//void saveVideoFun(cv::Mat frame);
 	BOOL PreTranslateMessage(MSG* pMsg);
 	int test;
 	int test2;
@@ -103,7 +105,6 @@ public:
 	CEdit eGainValue;
 	CEdit eExpoValue;
 	afx_msg void setTrigMode();
-//	afx_msg void setFpgaFreq();
 	afx_msg void setGainValue();
 	CButton cbAutoGain;
 	CButton cbAutoExpo;
@@ -114,4 +115,25 @@ public:
 
 	CButton m_chk_save_all;
 	afx_msg void OnBnClickedCheckSaveall();
+	afx_msg void OnEnChangeEditmaxexpo();
+	CEdit MaxExpo;
+	CEdit IMUSampleRate;
+	afx_msg void OnEnChangeEditimusmprate();
+	CEdit S1ADDR;
+	CEdit S1DATA;
+	CEdit S2ADDR;
+	CEdit S2DATA;
+	CEdit EEADDR;
+	CEdit EEDATA;
+	afx_msg void OnBnClickedButtonrds1();
+	afx_msg void OnBnClickedButtonwrs1();
+	afx_msg void OnBnClickedButtonrds2();
+	afx_msg void OnBnClickedButtonwrs2();
+	afx_msg void OnBnClickedButtoneerd();
+	afx_msg void OnBnClickedButtoneewr();
+	void setStatusText(CString cs);
+	void BMPHeader(int lWidth, int lHeight,byte* m_buf);
+	void initBMPHeader(int lWidth, int lHeight,BITMAPINFO*bmi);
+	BITMAPINFO m_bmi;
+	CDisplay *m_pDisplay;
 };

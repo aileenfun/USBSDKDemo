@@ -45,7 +45,7 @@
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
     <LinkIncremental>true</LinkIncremental>
     <IncludePath>Q:\github\CCTAPI\CCTAPI;$(IncludePath)</IncludePath>
-    <LibraryPath>Q:\github\UsbSDKDemo1.1\vs2010\Debug;$(LibraryPath)</LibraryPath>
+    <LibraryPath>Q:\github\UsbSDKDemo\vs2010\Debug;$(LibraryPath)</LibraryPath>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">
     <LinkIncremental>false</LinkIncremental>
@@ -108,6 +108,7 @@
     <None Include="res\UsbControl.ico" />
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="Display.h" />
     <ClInclude Include="Resource.h" />
     <ClInclude Include="ScreenShot.h" />
     <ClInclude Include="stdafx.h" />
@@ -118,6 +119,7 @@
     <ClInclude Include="VideoDlg.h" />
   </ItemGroup>
   <ItemGroup>
+    <ClCompile Include="Display.cpp" />
     <ClCompile Include="ScreenShot.cpp" />
     <ClCompile Include="stdafx.cpp">
       <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">Create</PrecompiledHeader>
